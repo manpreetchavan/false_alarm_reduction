@@ -2,6 +2,10 @@ import scipy.io as loader
 import os
 import pandas
 import numpy
+import heartpy
+import matplotlib.pyplot as plt
+# import c_labpl_qrs_detector as qrs_detector
+import mne.preprocessing.ecg as preps
 def get_files(di, ext = ".mat"):
     # return [f for f in os.listdir(".") if os.path.isfile(f)]
     files = []
@@ -25,13 +29,24 @@ def to_csv(file_path):
 
     II = mat['val'][0]
     V = mat['val'][1]
-    le = len(II)
-    fi.write("TIMESTAMP,II,V\n")
+    le = len(V)
+    fi.write("TIME,II,V\n")
     for i in range(le):
-        fi.write(str(i) + "," + str(II[i]) + "," + str(V[i]) + "\n")
+        fi.write(str(i) + "," + str(II[i]) +  "," + str(V[i]) + "\n")
     fi.close()
-file_list = get_files("./training/")
-print(file_list)
-for f in file_list:
-    to_csv(f)
+# file_list = get_files("./training/")
+# # print(file_list)
+# for f in file_list:
+#     to_csv(f)
+
+# array = pandas.read_csv('./csv/a103l.csv')
+# # ecg_arr = array[]
+# arr = heartpy.raw_to_ecg(array.iloc[:500, 0])  
+
+# # art = numpy.asarray(arr, 'np.float64')
+# print(array)
+# plt.plot(array)
+# plt.show()
+# qrs_detector.QRSDetectorOffline(ecg_data_path = "./raw.csv", verbose=True)
+
 # to_csv("./training/a104s.mat")

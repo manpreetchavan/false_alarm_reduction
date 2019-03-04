@@ -310,5 +310,5 @@ class QRSDetectorOffline(object):
 
 
 if __name__ == "__main__":
-    qrs_detector = QRSDetectorOffline(ecg_data_path="raw.csv", verbose=True,
+    qrs_detector = QRSDetectorOffline(ecg_data_path="./raw.csv", verbose=True,
                                       log_data=True, plot_data=True, show_plot=False)
