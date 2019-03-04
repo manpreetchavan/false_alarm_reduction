@@ -55,6 +55,7 @@ def get_qrs(xn, sampling_rate = 250):
                 break
             ind += 1
  
+ 
     return {'q_ts' : q, 'q' : xnq, 'r_ts' : rpeaks, 'r' : xnr, 's_ts' : s, 's' : xns}
 
 
