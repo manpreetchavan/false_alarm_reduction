@@ -6,26 +6,53 @@ from sklearn.preprocessing import StandardScaler
 # from scipy.fftpack import fft, fft2, fftshift
 import numpy
 
-def low_pass_filter(xn, cutoff, fs, order = 5):
+def notch_fi(data, low, high, fs, ripple, order = 3, ftype = 'butter', filt = True):
+    nyq  = fs/2.0
+    low  = low/nyq
+    high = high/nyq
+    b, a = signal.iirfilter(order, [low, high], rp=ripple, btype='bandstop',
+                     analog=False, ftype=ftype)
+    filtered_data = signal.filtfilt(b, a, data) if filt else signal.lfilter(b, a, data)
+    return filtered_data
+
+def low_pass_filter(xn, cutoff, fs, order = 5, filt = True):
     nyq = .5 * fs
     normal_cutoff = cutoff / nyq
     b, a = signal.butter(order, normal_cutoff, btype='low', analog=False)
-    yn = signal.lfilter(b, a, xn)
+    yn = signal.filtfilt(b, a, xn) if filt else signal.lfilter(b, a, xn)
     # yn = numpy.zeros(len(xn))
     return yn
 
-def butter(cutoff, fs, order = 5):
+def butter_bandpass(lowcut, highcut, fs, order=5):
+    nyq = 0.5 * fs
+    low = lowcut / nyq
+    high = highcut / nyq
+    b, a = signal.butter(order, [low, high], btype='band')
+    return b, a
+
+def butter_bandpass_filter(data, lowcut, highcut, fs, order=5, filt = True):
+    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
+    y = signal.filtfilt(b, a, data) if filt else signal.lfilter(b, a, data)
+    return y
+
+def butter_pass(cutoff, fs, order = 5):
     nyq = .5 * fs
     normal_cutoff = cutoff / nyq
-    b, a = signal.butter(order, normal_cutoff, btype='low', analog=False)
+    b, a = signal.butter(order, normal_cutoff, btype='high', analog=False)
     return b, a
 def high_pass_filter(xn, cutoff, fs, order = 5):
-    b, a = butter(cutoff, fs, order=order)
+    b, a = butter_pass(cutoff, fs, order=order)
     return signal.filtfilt(b, a, xn)
-def fft_(xn):
-    return numpy.fft.fft(xn)
-def fft_freq(xn):
-    return numpy.fft.fftfreq(xn.shape[-1])
+
+def fft_(xn, ab = False):
+    res = numpy.fft.fft(xn)
+    if ab : return numpy.abs(res)
+    return res
+
+def fft_freq(xn, ab = False):
+    res = numpy.fft.fftfreq(xn.shape[-1])
+    if ab: return numpy.abs(res)
+    return res
 
 def diff(xn):
     le = len(xn) - 1
@@ -36,7 +63,12 @@ def diff(xn):
     yn = numpy.append(yn, 0)
     print('diff : ', len(yn))
     return yn
-
+def intrgl(xn, c = 0):
+    le = len(xn) - 1
+    yn = numpy.zeros(le + 1)
+    for i in range(le):
+        yn[i + 1] = yn[i] + xn[i]
+    return yn
 def standardise(xn):
     scaler = StandardScaler().fit(xn)
     return scaler.transform(xn)
@@ -97,16 +129,98 @@ def r_peaks(xn, sampling_rate = 250, show = False):
     r_p = out['rpeaks']
     val = [xn[i] for i in r_p]
     return r_p, val
-if __name__ == '__main__':
-    dataset = pandas.read_csv('./csv/a386s.csv').values
-    # print(dataset[:1000,0:1])
-    xn = dataset[:10000,1]
-    it = dataset[:10000, 0]
-    plt.plot(it, xn, label = 'signal')
-    yn = diff(xn)
-    plt.plot(it, yn, label = 'diff')
+
+def preprocess(xn):
+    tn = xn
+    # print(ec)
+
+    # yn = butter_bandpass_filter(tn, 10, 50, 250, order= 4)
+    # yn = notch_fi(tn, 30, 124, 250, 15)
+    # yn = low_pass_filter(tn, 50, 250)
+    # yn = high_pass_filter(yn, 0.67, 250)
+    ec = ecg.ecg(xn, 250, False)
+    yn = ec['filtered']
+    plt.plot(it, yn, label = 'signal')
+    # ect = butter_bandpass_filter(yn, 10, 40, 250)
+    # yn = butter_bandpass_filter(yn, 0.67, 4, 250, order= 2 )
+    # th = butter_bandpass_filter(yn, 3, 7, 250 )
+    # # ffy = fft_(yn)
+    # ff = [v * 250 for v in fft_freq(yn, True)]
+    # print(ff)
+    # print(ffy)
+    # tn = diff(yn)
+    # yn = intrgl(tn)
+    # plt.plot(it, ect, label = 'ECG')
+    pt = peaks_detection(xn, 250)
+    p, q, r, s, t = pt['p_ts'], pt['q_ts'],  pt['r_ts'],  pt['s_ts'],  pt['t_ts']
+    vp, vq, vr, vs, vt = [], [], [], [], []
+    for i in range(len(r)):
+        vp.append(yn[p[i]])
+        vq.append(yn[q[i]])
+        vr.append(yn[r[i]])
+        vs.append(yn[s[i]])
+        vt.append(yn[t[i]])
+
+    # plt.plot(it, yn, label = '')
+    plt.plot(p, vp, label = 'P')
+    plt.plot(q, vq, label = 'q')
+    plt.plot(r, vr, label = 'r')
+    plt.plot(s, vs, label = 's')
+    plt.plot(t, vt, label = 't')
+    # plt.plot(it, th, label = 'T')
     plt.legend()
     plt.show()
+
+def peaks_detection(xn, sampling_rate):
+    rpeaks, rval = r_peaks(xn, sampling_rate)
+    qrs = get_qrs(xn, sampling_rate)
+    q = qrs['q_ts']
+    r = qrs['r_ts']
+    s = qrs['s_ts']
+    du_ts = qrs['du_ts']
+    p, t= [], []
+
+    #detecting p
+    for q_ind in q:
+        maxin = q_ind
+        for i in range(q_ind, q_ind - 64, -1):
+            if xn[maxin] < xn[i + 1]: maxin = i
+        p.append(maxin)
+
+    #detecting t
+    for s_ind in s:
+        maxin = s_ind
+        for i in range(s_ind, s_ind + 40):
+            if xn[maxin] < xn[i]: maxin = i
+        t.append(maxin)
+
+    return {'p_ts' : p, 'q_ts' : q, 'r_ts' : rpeaks, 's_ts' : s, 't_ts' : t, 'qrs_ts' : du_ts}
+
+def get_dur(xn, sampling_rate = 250):
+    fe = peaks_detection(xn, sampling_rate)
+    qrs = fe['qrs_ts']
+    p, q, r, s, t = fe['p_ts'], fe['q_ts'], fe['r_ts'], fe['s_ts'], fe['t_ts'], 
+    pr, qt, st = [], [], []
+    for i in range(len(p)):
+        pr.append((r[i] - p[i]) / sampling_rate)
+        qt.append((t[i] - q[i]) / sampling_rate)
+        st.append((t[i] - s[i]) / sampling_rate)
+
+    return {'pr': pr, 'qt': qt, 'st': st, 'qrs': qrs}
+
+    
+        
+
+
+
+if __name__ == '__main__':
+    dataset = pandas.read_csv('./csv/a103l.csv').values
+    # print(dataset[:1000,0:1])
+    xn = dataset[:500,1]
+    it = dataset[:500, 0]
+    # preprocess(xn)
+    print("HJK : ", get_dur(xn, 250))
+    
 
     # xn = low_pass_filter(xn, 20, 250)
     # xn = standardise(numpy.array(dataset[:1000, 0:1])).flat
