@@ -3,8 +3,15 @@ import pandas
 import scipy.signal as signal
 from biosppy.signals import ecg
 from sklearn.preprocessing import StandardScaler
+from keras import Sequential
+from keras.layers import Dense
 # from scipy.fftpack import fft, fft2, fftshift
 import numpy
+import falsefiles
+
+numpy.random.seed(7)
+
+#True Alarm : a142s.hea
 
 def notch_fi(data, low, high, fs, ripple, order = 3, ftype = 'butter', filt = True):
     nyq  = fs/2.0
@@ -141,16 +148,6 @@ def preprocess(xn):
     ec = ecg.ecg(xn, 250, False)
     yn = ec['filtered']
     plt.plot(it, yn, label = 'signal')
-    # ect = butter_bandpass_filter(yn, 10, 40, 250)
-    # yn = butter_bandpass_filter(yn, 0.67, 4, 250, order= 2 )
-    # th = butter_bandpass_filter(yn, 3, 7, 250 )
-    # # ffy = fft_(yn)
-    # ff = [v * 250 for v in fft_freq(yn, True)]
-    # print(ff)
-    # print(ffy)
-    # tn = diff(yn)
-    # yn = intrgl(tn)
-    # plt.plot(it, ect, label = 'ECG')
     pt = peaks_detection(xn, 250)
     p, q, r, s, t = pt['p_ts'], pt['q_ts'],  pt['r_ts'],  pt['s_ts'],  pt['t_ts']
     vp, vq, vr, vs, vt = [], [], [], [], []
@@ -209,17 +206,103 @@ def get_dur(xn, sampling_rate = 250):
     return {'pr': pr, 'qt': qt, 'st': st, 'qrs': qrs}
 
     
-        
+def data_prep(qrscount = 5, fileno = 5, filesamples = 5000):
+    fls_files, total, fls_no = falsefiles.all_false_files('./training', True)
+    data, label = numpy.ndarray(shape = (10000, 25)), numpy.ndarray(shape = (10000))
+    k = 0
+    for f in fls_files[: fileno]:
+        print('in')
+        dataset = pandas.read_csv('./csv/' + f + '.csv').values
+        xn, it = dataset[:filesamples, 1], dataset[:filesamples, 0]
+        nouse, hrate = get_heart_rate(xn, 250)
+        dur = get_dur(xn, 250)
+        le = len(dur['pr']) // qrscount - 1
+        pr, qrs, qt, st = dur['pr'], dur['qrs'], dur['qt'], dur['st'] 
+        print('le : ', le)
+        for i in range(le):
+            rate = hrate[i : i + qrscount]
+            intrm = []
+            for d in range(qrscount):
+                ## PR, QRS, QT, ST, HR
+                intrm.extend([pr[i + d], qrs[i + d], qt[d + i], st[i + d], rate[d]])
+                
+            data[k] = intrm
+            label[k] = 1
+            k = k + 1   
+    return data, label
 
+def network(train, label, save = True):
+    # create model
+    model = Sequential()
+    model.add(Dense(50, input_dim=25, activation='relu'))
+    model.add(Dense(50, activation='relu'))
+    model.add(Dense(25, activation='relu'))
+    model.add(Dense(1, activation='sigmoid'))
 
+    # Compile model
+    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy']) 
 
+    # Fit the model
+    model.fit(train, label, epochs=150, batch_size=10) 
+
+    scores = model.evaluate(train, label)
+    print("\n%s: %.2f%%" % (model.metrics_names[1], scores[1]*100))
+    
+    # calculate predictions
+    predictions = model.predict(train)
+    # round predictions
+    rounded = [round(x[0]) for x in predictions]
+    # print(rounded)
+    if save:
+        # serialize model to JSON
+        model_json = model.to_json()
+        with open("model.json", "w") as json_file:
+            json_file.write(model_json)
+        # serialize weights to HDF5
+        model.save_weights("model.h5")
+        print("Saved model to disk")
+    
+    # later...
+    
+    # # load json and create model
+    # json_file = open('model.json', 'r')
+    # loaded_model_json = json_file.read()
+    # json_file.close()
+    # loaded_model = model_from_json(loaded_model_json)
+    # # load weights into new model
+    # loaded_model.load_weights("model.h5")
+    # print("Loaded model from disk")
+    
+def load_model(jfilename):
+    # load json and create model
+    json_file = open('model.json', 'r')
+    loaded_model_json = json_file.read()
+    json_file.close()
+    loaded_model = model_from_json(loaded_model_json)
+    # load weights into new model
+    loaded_model.load_weights("model.h5")
+    print("Loaded model from disk")
+    return load_model
+
+def evaluate_model(_model, X, Y):
+     # evaluate loaded model on test data
+    _model.compile(loss='binary_crossentropy', optimizer='rmsprop', metrics=['accuracy'])
+    score = _model.evaluate(X, Y, verbose=0)
+    print("%s: %.2f%%" % (_model.metrics_names[1], score[1]*100))
+    return _model
 if __name__ == '__main__':
     dataset = pandas.read_csv('./csv/a103l.csv').values
     # print(dataset[:1000,0:1])
     xn = dataset[:500,1]
     it = dataset[:500, 0]
-    # preprocess(xn)
-    print("HJK : ", get_dur(xn, 250))
+    # # preprocess(xn)
+    # print("HJK : ", get_heart_rate(xn, 250))
+    data, label = data_prep()
+    print(data, "\n\n\n", label)
+    
+    # network(data, label)
+    ldmodel = load_model('./model.json')
+    evaluate_model(ldmodel, data, label)
     
 
     # xn = low_pass_filter(xn, 20, 250)

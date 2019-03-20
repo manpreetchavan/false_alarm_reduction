@@ -2,7 +2,7 @@ import pandas as pd
 import glob
 path=r'./training'
 
-def all_false_files(path, all = False):
+def all_false_files(path, allparams = False):
     allFiles=glob.glob(path + "\*.hea")
     allf=0
     falf=0
@@ -17,7 +17,8 @@ def all_false_files(path, all = False):
                     falf+=1
                     fname=file
                     falselist.append(fname[-9:-4])
-    if all : return falselist, allf, falf
+    if allparams : return falselist, allf, falf
     return falselist
-
-print(all_false_files(path))
+    
+if __name__ == "__main__":
+    print(all_false_files(path))
