@@ -179,7 +179,7 @@ def get_dur(xn, sampling_rate = 250):
 
     
 def data_prep(qrscount = 5, filearr = None, filelabel = None, fileno = 5, filesamples = 5000):
-    fls_files, total, fls_no = file_utils.all_false_files('./training', True)
+    fls_files, total, fls_no = file_utils.all_hea_files('./training', True)
     if filearr : 
         fls_files, total, fls_no = filearr, 1, 1
         fileno = 1
