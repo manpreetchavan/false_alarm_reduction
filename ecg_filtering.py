@@ -5,15 +5,16 @@ from biosppy.signals import ecg
 from sklearn.preprocessing import StandardScaler
 from keras import Sequential
 from keras.layers import Dense
+from keras.models import model_from_json
 # from scipy.fftpack import fft, fft2, fftshift
 import numpy
-import falsefiles
+import file_utils
 
 numpy.random.seed(7)
 
 #True Alarm : a142s.hea
 
-def notch_fi(data, low, high, fs, ripple, order = 3, ftype = 'butter', filt = True):
+def notch_filter(data, low, high, fs, ripple, order = 3, ftype = 'butter', filt = True):
     nyq  = fs/2.0
     low  = low/nyq
     high = high/nyq
@@ -50,6 +51,10 @@ def butter_pass(cutoff, fs, order = 5):
 def high_pass_filter(xn, cutoff, fs, order = 5):
     b, a = butter_pass(cutoff, fs, order=order)
     return signal.filtfilt(b, a, xn)
+
+def smooth(xn, cutoff = 0.1, order = 3):
+    b, a = signal.butter(order, cutoff, output='ba')
+    return signal.filtfilt(b,a, xn)
 
 def fft_(xn, ab = False):
     res = numpy.fft.fft(xn)
@@ -88,28 +93,26 @@ def get_qrs(xn, sampling_rate = 250):
     #get q's
     xnq, q = [], []
     for rin in rpeaks:
-        ind = rin
-        active = False
-        while True:
-            if xn[ind] < thr: active = True
-            if active and xn[ind - 1] > xn[ind] : 
-                xnq.append(xn[ind])
-                q.append(ind)
-                break
-            ind -= 1
+        maxin = rin
+        for i in range(30):
+            if xn[maxin] > xn[rin - i] : 
+                maxin = rin - i        
+        xnq.append(xn[maxin])
+        q.append(maxin)
+
     #get r's
     xns, s = [], []
     for rin in rpeaks:
         ind = rin
-        active = False
-        while True:
-            if xn[ind] < thr: active = True
-            if active and xn[ind - 1] < xn[ind] : 
-                xns.append(xn[ind - 1])
-                s.append(ind - 1)
-                break
-            ind += 1
-    #get qrs duration
+        # active = False
+        maxin = rin
+        for i in range(30):
+            if xn[maxin] > xn[rin + i] : 
+                maxin = rin + i
+        
+        xns.append(xn[maxin])
+        s.append(maxin)    
+ 
     du_ts = []
     for jt in range(len(q)):    
         # in1 = q[jt]
@@ -137,37 +140,6 @@ def r_peaks(xn, sampling_rate = 250, show = False):
     val = [xn[i] for i in r_p]
     return r_p, val
 
-def preprocess(xn):
-    tn = xn
-    # print(ec)
-
-    # yn = butter_bandpass_filter(tn, 10, 50, 250, order= 4)
-    # yn = notch_fi(tn, 30, 124, 250, 15)
-    # yn = low_pass_filter(tn, 50, 250)
-    # yn = high_pass_filter(yn, 0.67, 250)
-    ec = ecg.ecg(xn, 250, False)
-    yn = ec['filtered']
-    plt.plot(it, yn, label = 'signal')
-    pt = peaks_detection(xn, 250)
-    p, q, r, s, t = pt['p_ts'], pt['q_ts'],  pt['r_ts'],  pt['s_ts'],  pt['t_ts']
-    vp, vq, vr, vs, vt = [], [], [], [], []
-    for i in range(len(r)):
-        vp.append(yn[p[i]])
-        vq.append(yn[q[i]])
-        vr.append(yn[r[i]])
-        vs.append(yn[s[i]])
-        vt.append(yn[t[i]])
-
-    # plt.plot(it, yn, label = '')
-    plt.plot(p, vp, label = 'P')
-    plt.plot(q, vq, label = 'q')
-    plt.plot(r, vr, label = 'r')
-    plt.plot(s, vs, label = 's')
-    plt.plot(t, vt, label = 't')
-    # plt.plot(it, th, label = 'T')
-    plt.legend()
-    plt.show()
-
 def peaks_detection(xn, sampling_rate):
     rpeaks, rval = r_peaks(xn, sampling_rate)
     qrs = get_qrs(xn, sampling_rate)
@@ -180,8 +152,8 @@ def peaks_detection(xn, sampling_rate):
     #detecting p
     for q_ind in q:
         maxin = q_ind
-        for i in range(q_ind, q_ind - 64, -1):
-            if xn[maxin] < xn[i + 1]: maxin = i
+        for i in range(q_ind, q_ind - 34, -1):
+            if xn[maxin] < xn[i]: maxin = i
         p.append(maxin)
 
     #detecting t
@@ -206,13 +178,21 @@ def get_dur(xn, sampling_rate = 250):
     return {'pr': pr, 'qt': qt, 'st': st, 'qrs': qrs}
 
     
-def data_prep(qrscount = 5, fileno = 5, filesamples = 5000):
-    fls_files, total, fls_no = falsefiles.all_false_files('./training', True)
+def data_prep(qrscount = 5, filearr = None, filelabel = None, fileno = 5, filesamples = 5000):
+    fls_files, total, fls_no = file_utils.all_false_files('./training', True)
+    if filearr : 
+        fls_files, total, fls_no = filearr, 1, 1
+        fileno = 1
+    filelabel = [1] * len(filearr)
     data, label = numpy.ndarray(shape = (10000, 25)), numpy.ndarray(shape = (10000))
     k = 0
+    kl = 0
     for f in fls_files[: fileno]:
+        label_val = fllelabel[kl]
+        kl += 1
         print('in')
         dataset = pandas.read_csv('./csv/' + f + '.csv').values
+        if filesamples == 0: filesamples = len(dataset)
         xn, it = dataset[:filesamples, 1], dataset[:filesamples, 0]
         nouse, hrate = get_heart_rate(xn, 250)
         dur = get_dur(xn, 250)
@@ -227,7 +207,7 @@ def data_prep(qrscount = 5, fileno = 5, filesamples = 5000):
                 intrm.extend([pr[i + d], qrs[i + d], qt[d + i], st[i + d], rate[d]])
                 
             data[k] = intrm
-            label[k] = 1
+            label[k] = label_val
             k = k + 1   
     return data, label
 
@@ -245,13 +225,13 @@ def network(train, label, save = True):
     # Fit the model
     model.fit(train, label, epochs=150, batch_size=10) 
 
-    scores = model.evaluate(train, label)
-    print("\n%s: %.2f%%" % (model.metrics_names[1], scores[1]*100))
+    # scores = model.evaluate(train, label)
+    # print("\n%s: %.2f%%" % (model.metrics_names[1], scores[1]*100))
     
-    # calculate predictions
-    predictions = model.predict(train)
-    # round predictions
-    rounded = [round(x[0]) for x in predictions]
+    # # calculate predictions
+    # predictions = model.predict(train)
+    # # round predictions
+    # rounded = [round(x[0]) for x in predictions]
     # print(rounded)
     if save:
         # serialize model to JSON
@@ -261,48 +241,85 @@ def network(train, label, save = True):
         # serialize weights to HDF5
         model.save_weights("model.h5")
         print("Saved model to disk")
-    
-    # later...
-    
-    # # load json and create model
-    # json_file = open('model.json', 'r')
-    # loaded_model_json = json_file.read()
-    # json_file.close()
-    # loaded_model = model_from_json(loaded_model_json)
-    # # load weights into new model
-    # loaded_model.load_weights("model.h5")
-    # print("Loaded model from disk")
-    
+
 def load_model(jfilename):
-    # load json and create model
-    json_file = open('model.json', 'r')
-    loaded_model_json = json_file.read()
-    json_file.close()
-    loaded_model = model_from_json(loaded_model_json)
-    # load weights into new model
-    loaded_model.load_weights("model.h5")
-    print("Loaded model from disk")
-    return load_model
+    with open(jfilename, 'r') as json_file:
+        loaded_model_json = json_file.read()
+        json_file.close()
+        loaded_model = model_from_json(loaded_model_json)
+        loaded_model.load_weights("model.h5")     # load weights into new model
+        print("Loaded model from disk")
+        return loaded_model
 
 def evaluate_model(_model, X, Y):
+    print("................ ", _model)
      # evaluate loaded model on test data
     _model.compile(loss='binary_crossentropy', optimizer='rmsprop', metrics=['accuracy'])
     score = _model.evaluate(X, Y, verbose=0)
     print("%s: %.2f%%" % (_model.metrics_names[1], score[1]*100))
     return _model
+
+
+
+
+def preprocess(xn):
+    tn = xn
+    # print(ec)
+
+    yn = butter_bandpass_filter(tn, 10, 50, 250, order= 4)
+    jn = butter_bandpass_filter(tn, 0.67, 8, 250, order= 4)
+
+    xn = yn + jn
+    # yn = notch_fi(tn, 30, 124, 250, 15)
+    # yn = low_pass_filter(tn, 50, 250)
+    # yn = high_pass_filter(yn, 0.67, 250)
+    
+    # plt.plot(it, xn, label = 'srh')
+
+    xn = intrgl(diff(xn))
+    
+    ec = ecg.ecg(xn, 250, False)
+    yn = ec['filtered']
+    sm = smooth(yn)
+    plt.plot(it, yn, label = 'signal')
+    pt = peaks_detection(yn, 250)
+    p, q, r, s, t = pt['p_ts'], pt['q_ts'],  pt['r_ts'],  pt['s_ts'],  pt['t_ts']
+    vp, vq, vr, vs, vt = [], [], [], [], []
+    for i in range(len(r)):
+        vp.append(yn[p[i]])
+        vq.append(yn[q[i]])
+        vr.append(yn[r[i]])
+        vs.append(yn[s[i]])
+        vt.append(yn[t[i]])
+
+    # plt.plot(it, yn, label = '')
+    plt.plot(p, vp, label = 'P')
+    plt.plot(q, vq, label = 'q')
+    plt.plot(r, vr, label = 'r')
+    plt.plot(s, vs, label = 's')
+    plt.plot(t, vt, label = 't')
+    # plt.plot(it, th, label = 'T')
+    plt.legend()
+    plt.show()
+
 if __name__ == '__main__':
-    dataset = pandas.read_csv('./csv/a103l.csv').values
+    dataset = pandas.read_csv('./csv/a142s.csv').values
     # print(dataset[:1000,0:1])
-    xn = dataset[:500,1]
-    it = dataset[:500, 0]
-    # # preprocess(xn)
+    xn = dataset[:, 1]
+    it = dataset[:, 0]
+    preprocess(xn)
+    du = get_dur(xn)
+    print(du)
+    print("len", len(du['pr']))
+
     # print("HJK : ", get_heart_rate(xn, 250))
-    data, label = data_prep()
-    print(data, "\n\n\n", label)
+    # data, label = data_prep(filearr=['a142s',], filelabel=[0, ], filesamples=0)
+    # print(data, "\n\n\n", label)
     
     # network(data, label)
-    ldmodel = load_model('./model.json')
-    evaluate_model(ldmodel, data, label)
+    # ldmodel = load_model('./model.json')
+
+    # evaluate_model(ldmodel, data, label)
     
 
     # xn = low_pass_filter(xn, 20, 250)
