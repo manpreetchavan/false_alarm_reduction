@@ -115,17 +115,6 @@ def get_qrs(xn, sampling_rate = 250):
  
     du_ts = []
     for jt in range(len(q)):    
-        # in1 = q[jt]
-        # while True:
-        #     if xn[in1] > thr:
-        #         break
-        #     in1 -= 1
-        # in2 = s[jt]
-        # while True:
-        #     if xn[in2] > thr:
-        #         break
-        #     in2 += 1
-        # du_ts.append((in2 - in1) / 250)
         du_ts.append((s[jt] - q[jt]) / sampling_rate)
     return {'q_ts' : q, 'q' : xnq, 'r_ts' : rpeaks, 'r' : xnr, 's_ts' : s, 's' : xns, 'du_ts' : du_ts}
 
